@@ -1,17 +1,11 @@
 use anyhow::{Context, bail};
 use clap::Parser;
+use owo_colors::OwoColorize;
 use std::{
   path::{Path, PathBuf},
   process::{Command, Stdio},
   thread,
 };
-
-const RESET: &str = "\x1b[0m";
-const BOLD: &str = "\x1b[1m";
-const DIM: &str = "\x1b[2m";
-const GREEN: &str = "\x1b[32m";
-const RED: &str = "\x1b[31m";
-const CYAN: &str = "\x1b[36m";
 
 #[derive(Parser)]
 struct Args {
@@ -23,7 +17,7 @@ struct CompileResult {
   file:      PathBuf,
   stdout:    String,
   stderr:    String,
-  exit_code: Option<i32>,
+  exit_code: i32,
 }
 
 struct RemoteOutput {
@@ -35,7 +29,7 @@ struct RemoteOutput {
 fn main() {
   let args = Args::parse();
 
-  println!("{DIM}compiling {} file(s)...{RESET}", args.files.len());
+  println!("{}", format_args!("compiling {} file(s)...", args.files.len()).dimmed());
   let handles: Vec<_> = args
     .files
     .into_iter()
@@ -47,7 +41,7 @@ fn main() {
     match handle.join().unwrap() {
       Ok(result) => print_result(&result),
       Err((file, e)) => {
-        println!("{RED}{BOLD}error{RESET} compiling '{}': {e}", file.display());
+        println!("{} compiling '{}': {e}", "error".red().bold(), file.display());
         failed = true;
       }
     }
@@ -60,7 +54,7 @@ fn main() {
 
 fn print_result(result: &CompileResult) {
   let name = result.file.file_name().unwrap().to_string_lossy();
-  println!("{CYAN}{BOLD}== {name} =={RESET}");
+  println!("{}", format_args!("== {name} ==").cyan().bold());
 
   if !result.stdout.trim().is_empty() {
     print!("{}", result.stdout);
@@ -69,10 +63,13 @@ fn print_result(result: &CompileResult) {
     print!("{}", result.stderr);
   }
 
-  match result.exit_code {
-    Some(0) => println!("{GREEN}{BOLD}compilation successful{RESET}"),
-    Some(code) => println!("{RED}{BOLD}compilation failed (exit code {code}){RESET}"),
-    None => println!("{RED}could not determine gcc exit code{RESET}"),
+  if result.exit_code == 0 {
+    println!("{}", "compilation successful".green().bold());
+  } else {
+    println!(
+      "{}",
+      format_args!("compilation failed (exit code {})", result.exit_code).red().bold()
+    );
   }
 
   println!();
@@ -142,6 +139,6 @@ fn compile(file: &Path) -> anyhow::Result<CompileResult> {
     file:      file.to_path_buf(),
     stdout:    result.stdout,
     stderr:    result.stderr,
-    exit_code: Some(result.exit_code),
+    exit_code: result.exit_code,
   })
 }
