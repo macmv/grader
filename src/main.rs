@@ -6,6 +6,13 @@ use std::{
   thread,
 };
 
+const RESET: &str = "\x1b[0m";
+const BOLD: &str = "\x1b[1m";
+const DIM: &str = "\x1b[2m";
+const GREEN: &str = "\x1b[32m";
+const RED: &str = "\x1b[31m";
+const CYAN: &str = "\x1b[36m";
+
 #[derive(Parser)]
 struct Args {
   /// The .c files to compile
@@ -19,10 +26,16 @@ struct CompileResult {
   exit_code: Option<i32>,
 }
 
+struct RemoteOutput {
+  stdout:    String,
+  stderr:    String,
+  exit_code: i32,
+}
+
 fn main() {
   let args = Args::parse();
 
-  println!("=== compiling {} files ===", args.files.len());
+  println!("{DIM}compiling {} file(s)...{RESET}", args.files.len());
   let handles: Vec<_> = args
     .files
     .into_iter()
@@ -34,7 +47,7 @@ fn main() {
     match handle.join().unwrap() {
       Ok(result) => print_result(&result),
       Err((file, e)) => {
-        println!("error compiling '{}': {e}", file.display());
+        println!("{RED}{BOLD}error{RESET} compiling '{}': {e}", file.display());
         failed = true;
       }
     }
@@ -46,56 +59,28 @@ fn main() {
 }
 
 fn print_result(result: &CompileResult) {
-  println!("=== {} ===", result.file.file_name().unwrap().display());
+  let name = result.file.file_name().unwrap().to_string_lossy();
+  println!("{CYAN}{BOLD}== {name} =={RESET}");
+
   if !result.stdout.trim().is_empty() {
     print!("{}", result.stdout);
   }
   if !result.stderr.trim().is_empty() {
     print!("{}", result.stderr);
   }
+
   match result.exit_code {
-    Some(0) => println!("Compilation successful."),
-    Some(code) => println!("Compilation failed (exit code {}).", code),
-    None => println!("Could not determine gcc exit code."),
+    Some(0) => println!("{GREEN}{BOLD}compilation successful{RESET}"),
+    Some(code) => println!("{RED}{BOLD}compilation failed (exit code {code}){RESET}"),
+    None => println!("{RED}could not determine gcc exit code{RESET}"),
   }
+
+  println!();
 }
 
-fn compile(file: &Path) -> anyhow::Result<CompileResult> {
-  let file = file.canonicalize()?;
-
-  let file_str = file.to_str().context("file path is not valid utf-8")?;
-  let path = file_str
-    .strip_prefix("/home/macmv/Desktop/school/wwu/ta/")
-    .context("file is not in the 'ta' directory")?;
-
-  if !(path.chars().filter(|c| *c == '/').count() == 2 && path.ends_with(".c")) {
-    bail!("invalid path: '{path}'\nshould have the format ta/<class>/<assignment>/<file>.c");
-  }
-
-  let parent = &path[..path.rfind('/').unwrap()];
-  Command::new("ssh")
-    .arg("wwu")
-    .arg(format!("mkdir -p ~/Desktop/ta/{parent}"))
-    .output()
-    .context("failed to create remote directory")?;
-
-  let remote_path = format!("~/Desktop/ta/{}", path);
-  let remote_build = format!("~/Desktop/ta/{}", path.strip_suffix(".c").unwrap());
-  let gcc_flags = "-Wall -Wextra -pedantic";
-
-  let status = Command::new("scp")
-    .arg(file_str)
-    .arg(&format!("wwu:{remote_path}"))
-    .status()
-    .context("failed to run scp")?;
-
-  if !status.success() {
-    bail!("scp failed with {}", status);
-  }
-
+fn ssh(cmd: &str) -> anyhow::Result<RemoteOutput> {
   let output = Command::new("ssh")
-    .arg("wwu")
-    .arg(format!("gcc {remote_path} -o {remote_build} {gcc_flags} 2>&1; echo \"exit:$?\""))
+    .args(["-T", "wwu", &format!("{cmd} 2>&1; echo \"exit:$?\"")])
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
     .output()
@@ -115,5 +100,48 @@ fn compile(file: &Path) -> anyhow::Result<CompileResult> {
     }
   }
 
-  Ok(CompileResult { file: file.to_path_buf(), stdout, stderr, exit_code })
+  let exit_code = exit_code.context("could not determine remote exit code")?;
+  Ok(RemoteOutput { stdout, stderr, exit_code })
+}
+
+fn compile(file: &Path) -> anyhow::Result<CompileResult> {
+  let file = file.canonicalize()?;
+
+  let file_str = file.to_str().context("file path is not valid utf-8")?;
+  let path = file_str
+    .strip_prefix("/home/macmv/Desktop/school/wwu/ta/")
+    .context("file is not in the 'ta' directory")?;
+
+  if !(path.chars().filter(|c| *c == '/').count() == 2 && path.ends_with(".c")) {
+    bail!("invalid path: '{path}'\nshould have the format ta/<class>/<assignment>/<file>.c");
+  }
+
+  let parent = &path[..path.rfind('/').unwrap()];
+  ssh(&format!("mkdir -p ~/Desktop/ta/{parent}")).context("failed to create remote directory")?;
+
+  let remote_path = format!("~/Desktop/ta/{}", path);
+  let remote_build = format!("~/Desktop/ta/{}", path.strip_suffix(".c").unwrap());
+  let gcc_flags = "-Wall -Wextra -pedantic";
+
+  let status = Command::new("scp")
+    .arg(file_str)
+    .arg(&format!("wwu:{remote_path}"))
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .status()
+    .context("failed to run scp")?;
+
+  if !status.success() {
+    bail!("scp failed with {}", status);
+  }
+
+  let result =
+    ssh(&format!("gcc {remote_path} -o {remote_build} {gcc_flags}")).context("gcc failed")?;
+
+  Ok(CompileResult {
+    file:      file.to_path_buf(),
+    stdout:    result.stdout,
+    stderr:    result.stderr,
+    exit_code: Some(result.exit_code),
+  })
 }
