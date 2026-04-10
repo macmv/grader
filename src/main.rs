@@ -9,8 +9,16 @@ use std::{
 
 #[derive(Parser)]
 struct Args {
-  /// The .c files to compile
-  files: Vec<PathBuf>,
+  #[clap(subcommand)]
+  cmd: Cmd,
+}
+
+#[derive(clap::Subcommand)]
+enum Cmd {
+  Compile {
+    /// The .c files to compile
+    files: Vec<PathBuf>,
+  },
 }
 
 struct CompileResult {
@@ -29,11 +37,19 @@ struct RemoteOutput {
 fn main() {
   let args = Args::parse();
 
-  println!("{}", format_args!("compiling {} file(s)...", args.files.len()).dimmed());
-  let handles: Vec<_> = args
-    .files
+  match args.cmd {
+    Cmd::Compile { files } => compile_files(&files),
+  }
+}
+
+fn compile_files(files: &[PathBuf]) {
+  println!("{}", format_args!("compiling {} file(s)...", files.len()).dimmed());
+  let handles: Vec<_> = files
     .into_iter()
-    .map(|file| thread::spawn(move || compile(&file).map_err(|e| (file.clone(), e))))
+    .map(|file| {
+      let file = file.clone();
+      thread::spawn(move || compile(&file).map_err(|e| (file.clone(), e)))
+    })
     .collect();
 
   let mut failed = false;
