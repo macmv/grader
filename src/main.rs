@@ -7,6 +7,8 @@ use std::{
   thread,
 };
 
+mod download;
+
 #[derive(Parser)]
 struct Args {
   #[clap(subcommand)]
@@ -15,6 +17,13 @@ struct Args {
 
 #[derive(clap::Subcommand)]
 enum Cmd {
+  List {
+    course: String,
+  },
+  Download {
+    section:    String,
+    assignment: String,
+  },
   Compile {
     /// The .c files to compile
     files: Vec<PathBuf>,
@@ -38,6 +47,8 @@ fn main() {
   let args = Args::parse();
 
   match args.cmd {
+    Cmd::List { course } => download::list_sections(&course),
+    Cmd::Download { section, assignment } => download::download_submissions(&section, &assignment),
     Cmd::Compile { files } => compile_files(&files),
   }
 }
