@@ -7,21 +7,27 @@ use std::{
   thread,
 };
 
+use crate::workspace::Workspace;
+
 mod download;
+mod settings;
+mod workspace;
 
 #[derive(Parser)]
 struct Args {
+  #[clap(long, global = true)]
+  course: Option<String>,
+
   #[clap(subcommand)]
   cmd: Cmd,
 }
 
 #[derive(clap::Subcommand)]
 enum Cmd {
-  List {
+  Sections {
     course: String,
   },
   Download {
-    section:    String,
     assignment: String,
   },
   Compile {
@@ -47,8 +53,20 @@ fn main() {
   let args = Args::parse();
 
   match args.cmd {
-    Cmd::List { course } => download::list_sections(&course),
-    Cmd::Download { section, assignment } => download::download_submissions(&section, &assignment),
+    Cmd::Sections { course } => download::list_sections(&course),
+    Cmd::Download { assignment } => {
+      let workspace = Workspace::new();
+      let course = args
+        .course
+        .as_deref()
+        .map(|name| workspace.course(name))
+        .unwrap_or_else(|| workspace.current_course())
+        .unwrap_or_else(|e| {
+          eprintln!("error: {e}");
+          std::process::exit(1);
+        });
+      course.download_submissions(&assignment)
+    }
     Cmd::Compile { files } => compile_files(&files),
   }
 }
