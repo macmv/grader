@@ -1,7 +1,9 @@
+use std::sync::{Arc, Mutex};
+
 use owo_colors::OwoColorize;
 
 use crate::{
-  ui::{Row, Table},
+  ui::Table,
   workspace::{Course, UserId, Users},
 };
 
@@ -13,13 +15,13 @@ pub struct Submission {
   pub attachments: Vec<Attachment>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 pub struct Attachment {
   pub display_name: String,
   pub url:          String,
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(Clone, serde::Deserialize, Debug)]
 pub struct User {
   pub id:            UserId,
   pub name:          String,
@@ -108,41 +110,52 @@ impl Course {
 
     table.display();
 
+    let table = Arc::new(Mutex::new(table));
+    let mut handles = vec![];
+
     for (i, s) in submissions.iter().enumerate() {
       if s.attachments.is_empty() {
         continue;
       }
-      let user = &users[&s.user_id];
-      let attachment = &s.attachments[0];
 
-      let content = ureq::get(&attachment.url)
-        .header("Authorization", &format!("Bearer {token}"))
-        .call()
-        .unwrap()
-        .body_mut()
-        .read_to_vec()
-        .unwrap();
+      let user = users[&s.user_id].clone();
+      let attachment = s.attachments[0].clone();
 
-      let path =
-        directory.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
+      let token = token.clone();
+      let directory = directory.clone();
+      let table = table.clone();
+      handles.push(std::thread::spawn(move || {
+        let content = ureq::get(&attachment.url)
+          .header("Authorization", &format!("Bearer {token}"))
+          .call()
+          .unwrap()
+          .body_mut()
+          .read_to_vec()
+          .unwrap();
 
-      let status = if !path.exists() {
-        "new".yellow().to_string()
-      } else {
-        let existing = std::fs::read(&path).unwrap();
-        if existing != content {
-          "changed".yellow().to_string()
+        let path =
+          directory.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
+
+        let status = if !path.exists() {
+          "new".yellow().to_string()
         } else {
-          "unchanged".green().to_string()
+          let existing = std::fs::read(&path).unwrap();
+          if existing != content {
+            "changed".yellow().to_string()
+          } else {
+            "unchanged".green().to_string()
+          }
+        };
+
+        table.lock().unwrap().update_row(i, |row| row.cols[3] = status);
+
+        if !dry_run {
+          std::fs::write(&path, &content).unwrap();
         }
-      };
-
-      table.update_row(i, |row| row.cols[3] = status);
-
-      if !dry_run {
-        std::fs::write(&path, &content).unwrap();
-      }
+      }));
     }
+
+    handles.into_iter().for_each(|h| h.join().unwrap());
   }
 }
 
