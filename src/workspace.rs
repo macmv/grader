@@ -1,8 +1,9 @@
-use std::path::PathBuf;
+use std::{cell::OnceCell, collections::HashMap, path::PathBuf};
 
 use anyhow::Context;
+use serde::Deserialize;
 
-use crate::settings::Settings;
+use crate::{download::User, settings::Settings};
 
 pub struct Workspace {
   pub root: PathBuf,
@@ -11,6 +12,21 @@ pub struct Workspace {
 pub struct Course {
   pub path:     PathBuf,
   pub settings: Settings,
+  user_data:    OnceCell<Users>,
+}
+
+pub struct Users {
+  users: HashMap<UserId, User>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[serde(transparent)]
+pub struct UserId(pub u32);
+
+impl Course {
+  pub fn users(&self) -> &HashMap<UserId, User> {
+    &self.user_data.get_or_init(|| self.fetch_users()).users
+  }
 }
 
 impl Workspace {
@@ -39,6 +55,12 @@ impl Workspace {
     let settings_str = std::fs::read_to_string(path.join("settings.toml"))
       .context("failed to read settings.toml. is this course setup?")?;
     let settings = toml::from_str(&settings_str)?;
-    Ok(Course { path, settings })
+    Ok(Course { path, settings, user_data: OnceCell::new() })
+  }
+}
+
+impl Users {
+  pub fn from_vec(users: Vec<User>) -> Self {
+    Users { users: users.into_iter().map(|u| (u.id, u)).collect() }
   }
 }

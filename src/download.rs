@@ -1,8 +1,8 @@
-use crate::workspace::Course;
+use crate::workspace::{Course, UserId, Users};
 
 #[derive(serde::Deserialize)]
 pub struct Submission {
-  pub user_id:     u32,
+  pub user_id:     UserId,
   pub score:       Option<f32>,
   #[serde(default)]
   pub attachments: Vec<Attachment>,
@@ -16,7 +16,7 @@ pub struct Attachment {
 
 #[derive(serde::Deserialize, Debug)]
 pub struct User {
-  pub id:            u32,
+  pub id:            UserId,
   pub name:          String,
   pub sortable_name: String,
 }
@@ -37,10 +37,10 @@ pub fn list_sections(course: &str) {
 }
 
 impl Course {
-  pub fn users(&self) -> Vec<User> {
+  pub fn fetch_users(&self) -> Users {
     let token = std::fs::read_to_string("../token.txt").unwrap().trim().to_string();
 
-    let res: Vec<User> = ureq::get(format!(
+    let users: Vec<User> = ureq::get(format!(
       "https://wwu.instructure.com/api/v1/sections/{section}/users?per_page=100",
       section = self.settings.section
     ))
@@ -52,7 +52,7 @@ impl Course {
     .read_json()
     .unwrap();
 
-    res
+    Users::from_vec(users)
   }
 
   pub fn download_submissions(&self, assignment: &str) {
@@ -81,15 +81,16 @@ impl Course {
     .unwrap();
 
     println!("{} submission(s)", submissions.len());
+
     let users = self.users();
 
-    submissions.sort_by_key(|s| &users.iter().find(|u| u.id == s.user_id).unwrap().sortable_name);
+    submissions.sort_by_key(|s| &users.get(&s.user_id).unwrap().sortable_name);
 
     for s in submissions {
-      let user = users.iter().find(|u| u.id == s.user_id).unwrap();
+      let user = &users[&s.user_id];
 
       if s.attachments.is_empty() {
-        println!("{:<20}: <not submitted>", user.name);
+        println!("{:<20}: <not submitted>", user.name)
       } else {
         let attachment = &s.attachments[0];
         println!(
@@ -98,7 +99,7 @@ impl Course {
           attachment.display_name,
           match s.score {
             Some(s) => format!("{s}"),
-            None => format!("<not graded>"),
+            None => "<not graded>".to_string(),
           }
         );
       }
