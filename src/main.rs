@@ -11,6 +11,7 @@ use crate::workspace::Workspace;
 
 mod download;
 mod settings;
+mod ui;
 mod workspace;
 
 #[derive(Parser)]

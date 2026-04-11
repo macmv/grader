@@ -1,6 +1,9 @@
 use owo_colors::OwoColorize;
 
-use crate::workspace::{Course, UserId, Users};
+use crate::{
+  ui::{Row, Table},
+  workspace::{Course, UserId, Users},
+};
 
 #[derive(serde::Deserialize)]
 pub struct Submission {
@@ -82,60 +85,63 @@ impl Course {
     .read_json()
     .unwrap();
 
-    println!("{} submission(s)", submissions.len());
-
     let users = self.users();
-
     submissions.sort_by_key(|s| &users.get(&s.user_id).unwrap().sortable_name);
 
     let directory = self.path.join(assignment);
     std::fs::create_dir_all(&directory).unwrap();
 
-    for s in submissions {
+    let mut table = Table::new(&["Name", "Filename", "Score", "Status"]);
+    for s in &submissions {
       let user = &users[&s.user_id];
-
       if s.attachments.is_empty() {
-        print!("{:<20}: <not submitted>", user.name)
+        table.add_row(&[&user.name, "<not submitted>", "", ""]);
       } else {
-        let attachment = &s.attachments[0];
-        print!(
-          "{:<20}: {:<20}: {}",
-          user.name,
-          attachment.display_name,
-          match s.score {
-            Some(s) => format!("{s}"),
-            None => "<not graded>".to_string(),
-          }
-        );
+        let a = &s.attachments[0];
+        let score = match s.score {
+          Some(s) => format!("{s}"),
+          None => "<not graded>".to_string(),
+        };
+        table.add_row(&[&user.name, &a.display_name, &score, "..."]);
+      };
+    }
 
-        let content = ureq::get(&attachment.url)
-          .header("Authorization", &format!("Bearer {token}"))
-          .call()
-          .unwrap()
-          .body_mut()
-          .read_to_vec()
-          .unwrap();
+    table.display();
 
-        let path =
-          directory.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
-
-        if !path.exists() {
-          print!(": {:<40}: {}", path.file_name().unwrap().display(), "new".yellow());
-        } else {
-          let existing = std::fs::read(&path).unwrap();
-          if existing != content {
-            print!(": {:<40}: {}", path.file_name().unwrap().display(), "changed".yellow());
-          } else {
-            print!(": {:<40}: {}", path.file_name().unwrap().display(), "unchanged".green());
-          }
-        }
-
-        if !dry_run {
-          std::fs::write(&path, &content).unwrap();
-        }
+    for (i, s) in submissions.iter().enumerate() {
+      if s.attachments.is_empty() {
+        continue;
       }
+      let user = &users[&s.user_id];
+      let attachment = &s.attachments[0];
 
-      println!();
+      let content = ureq::get(&attachment.url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .call()
+        .unwrap()
+        .body_mut()
+        .read_to_vec()
+        .unwrap();
+
+      let path =
+        directory.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
+
+      let status = if !path.exists() {
+        "new".yellow().to_string()
+      } else {
+        let existing = std::fs::read(&path).unwrap();
+        if existing != content {
+          "changed".yellow().to_string()
+        } else {
+          "unchanged".green().to_string()
+        }
+      };
+
+      table.update_row(i, |row| row.cols[3] = status);
+
+      if !dry_run {
+        std::fs::write(&path, &content).unwrap();
+      }
     }
   }
 }
