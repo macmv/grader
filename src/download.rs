@@ -87,14 +87,14 @@ impl Assignment<'_> {
     let mut table = Table::new(&["Name", "Filename", "Score", "Status"]);
     for s in &submissions {
       let user = &users[&s.user_id];
+      let score = match s.score {
+        Some(s) => format!("{s}"),
+        None => "<not graded>".to_string(),
+      };
       if s.attachments.is_empty() {
-        table.add_row(&[&user.name, "<not submitted>", "", ""]);
+        table.add_row(&[&user.name, "<not submitted>", &score, ""]);
       } else {
         let a = &s.attachments[0];
-        let score = match s.score {
-          Some(s) => format!("{s}"),
-          None => "<not graded>".to_string(),
-        };
         table.add_row(&[&user.name, &a.display_name, &score, "..."]);
       };
     }
