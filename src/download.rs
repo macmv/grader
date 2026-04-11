@@ -87,6 +87,7 @@ impl Assignment<'_> {
     let mut table = Table::new(&["Name", "Filename", "Score", "Status"]);
     for s in &submissions {
       let user = &users[&s.user_id];
+
       let score = match s.score {
         Some(s) => format!("{s}"),
         None => "<not graded>".to_string(),
@@ -95,7 +96,8 @@ impl Assignment<'_> {
         table.add_row(&[&user.name, "<not submitted>", &score, ""]);
       } else {
         let a = &s.attachments[0];
-        table.add_row(&[&user.name, &a.display_name, &score, "..."]);
+        let path = self.path.join(format!("{}-{}", snakeify(&user.sortable_name), a.display_name));
+        table.add_row(&[&user.name, &path.file_name().unwrap().to_string_lossy(), &score, "..."]);
       };
     }
 
@@ -113,8 +115,10 @@ impl Assignment<'_> {
       let attachment = s.attachments[0].clone();
 
       let token = self.course.workspace.token.clone();
-      let directory = self.path.clone();
       let table = table.clone();
+      let path =
+        self.path.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
+
       handles.push(std::thread::spawn(move || {
         let content = ureq::get(&attachment.url)
           .header("Authorization", &format!("Bearer {token}"))
@@ -123,9 +127,6 @@ impl Assignment<'_> {
           .body_mut()
           .read_to_vec()
           .unwrap();
-
-        let path =
-          directory.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
 
         let status = if !path.exists() {
           "new".yellow().to_string()
