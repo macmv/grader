@@ -1,3 +1,5 @@
+use owo_colors::OwoColorize;
+
 use crate::workspace::{Course, UserId, Users};
 
 #[derive(serde::Deserialize)]
@@ -55,7 +57,7 @@ impl Course {
     Users::from_vec(users)
   }
 
-  pub fn download_submissions(&self, assignment: &str) {
+  pub fn download_submissions(&self, assignment: &str, dry_run: bool) {
     let assignment_id = self
       .settings
       .assignment
@@ -86,14 +88,17 @@ impl Course {
 
     submissions.sort_by_key(|s| &users.get(&s.user_id).unwrap().sortable_name);
 
+    let directory = self.path.join(assignment);
+    std::fs::create_dir_all(&directory).unwrap();
+
     for s in submissions {
       let user = &users[&s.user_id];
 
       if s.attachments.is_empty() {
-        println!("{:<20}: <not submitted>", user.name)
+        print!("{:<20}: <not submitted>", user.name)
       } else {
         let attachment = &s.attachments[0];
-        println!(
+        print!(
           "{:<20}: {:<20}: {}",
           user.name,
           attachment.display_name,
@@ -102,7 +107,47 @@ impl Course {
             None => "<not graded>".to_string(),
           }
         );
+
+        let content = ureq::get(&attachment.url)
+          .header("Authorization", &format!("Bearer {token}"))
+          .call()
+          .unwrap()
+          .body_mut()
+          .read_to_vec()
+          .unwrap();
+
+        let path =
+          directory.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
+
+        if !path.exists() {
+          print!(": {:<40}: {}", path.file_name().unwrap().display(), "new".yellow());
+        } else {
+          let existing = std::fs::read(&path).unwrap();
+          if existing != content {
+            print!(": {:<40}: {}", path.file_name().unwrap().display(), "changed".yellow());
+          } else {
+            print!(": {:<40}: {}", path.file_name().unwrap().display(), "unchanged".green());
+          }
+        }
+
+        if !dry_run {
+          std::fs::write(&path, &content).unwrap();
+        }
       }
+
+      println!();
     }
   }
+}
+
+fn snakeify(name: &str) -> String {
+  let mut result = String::new();
+  for c in name.chars() {
+    if c.is_ascii_alphanumeric() {
+      result.push(c.to_ascii_lowercase());
+    } else if c == ' ' {
+      result.push('-');
+    }
+  }
+  result
 }

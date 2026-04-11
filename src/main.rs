@@ -29,6 +29,8 @@ enum Cmd {
   },
   Download {
     assignment: String,
+    #[clap(long)]
+    dry_run:    bool,
   },
   Compile {
     /// The .c files to compile
@@ -54,7 +56,7 @@ fn main() {
 
   match args.cmd {
     Cmd::Sections { course } => download::list_sections(&course),
-    Cmd::Download { assignment } => {
+    Cmd::Download { assignment, dry_run } => {
       let workspace = Workspace::new();
       let course = args
         .course
@@ -66,7 +68,7 @@ fn main() {
           std::process::exit(1);
         });
 
-      course.download_submissions(&assignment)
+      course.download_submissions(&assignment, dry_run)
     }
     Cmd::Compile { files } => compile_files(&files),
   }
