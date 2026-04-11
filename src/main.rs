@@ -68,10 +68,13 @@ fn main() {
       assignment.download_submissions(args.dry_run);
     }
     Cmd::Compile { files } => {
-      let files = if files.is_empty() {
+      let files: Vec<_> = if files.is_empty() {
         assignment.path.read_dir().unwrap().map(|e| e.unwrap().path()).collect()
       } else {
         files
+          .into_iter()
+          .map(|f| if f.is_relative() { assignment.path.join(f) } else { f })
+          .collect()
       };
 
       compile::compile_files(&files)
