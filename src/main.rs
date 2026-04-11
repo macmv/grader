@@ -65,6 +65,7 @@ fn main() {
           eprintln!("error: {e}");
           std::process::exit(1);
         });
+
       course.download_submissions(&assignment)
     }
     Cmd::Compile { files } => compile_files(&files),
