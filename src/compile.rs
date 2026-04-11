@@ -141,7 +141,7 @@ fn compile(file: &Path) -> anyhow::Result<CompileResult> {
 
   let remote_path = format!("~/Desktop/ta/{}", path);
   let remote_build = format!("~/Desktop/ta/{}", path.strip_suffix(".c").unwrap());
-  let gcc_flags = "-Wall -Wextra -pedantic";
+  let gcc_flags = "-Wall -Wextra -pedantic -fdiagnostics-color=always";
 
   let status = Command::new("scp")
     .arg(file_str)
