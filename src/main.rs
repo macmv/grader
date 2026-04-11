@@ -29,7 +29,7 @@ enum Cmd {
     course: String,
   },
   Download {
-    assignment: String,
+    assignment: Option<String>,
     #[clap(long)]
     dry_run:    bool,
   },
@@ -69,7 +69,16 @@ fn main() {
           std::process::exit(1);
         });
 
-      course.download_submissions(&assignment, dry_run)
+      let assignment = assignment
+        .as_deref()
+        .map(|name| course.assignment(name))
+        .unwrap_or_else(|| course.current_assignment())
+        .unwrap_or_else(|e| {
+          eprintln!("error: {e}");
+          std::process::exit(1);
+        });
+
+      assignment.download_submissions(dry_run);
     }
     Cmd::Compile { files } => compile_files(&files),
   }

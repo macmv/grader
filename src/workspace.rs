@@ -15,6 +15,13 @@ pub struct Course {
   user_data:    OnceCell<Users>,
 }
 
+pub struct Assignment<'a> {
+  pub course: &'a Course,
+
+  pub path: PathBuf,
+  pub id:   u32,
+}
+
 pub struct Users {
   users: HashMap<UserId, User>,
 }
@@ -26,6 +33,29 @@ pub struct UserId(pub u32);
 impl Course {
   pub fn users(&self) -> &HashMap<UserId, User> {
     &self.user_data.get_or_init(|| self.fetch_users()).users
+  }
+
+  pub fn current_assignment(&self) -> anyhow::Result<Assignment<'_>> {
+    let pwd = std::env::current_dir()?;
+    let relative = pwd
+      .strip_prefix(&self.path)
+      .map_err(|_| anyhow::anyhow!("current directory is not inside this course"))?;
+    let name = relative
+      .components()
+      .next()
+      .ok_or_else(|| anyhow::anyhow!("current directory is the course root, not an assignment"))?;
+    self.assignment(name.as_os_str().to_str().unwrap())
+  }
+
+  pub fn assignment(&self, name: &str) -> anyhow::Result<Assignment<'_>> {
+    let id = self
+      .settings
+      .assignment
+      .get(name)
+      .ok_or_else(|| anyhow::anyhow!("assignment '{name}' not found in settings.toml"))?
+      .id;
+
+    Ok(Assignment { course: self, path: self.path.join(name), id })
   }
 }
 

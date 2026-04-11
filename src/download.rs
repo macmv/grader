@@ -4,7 +4,7 @@ use owo_colors::OwoColorize;
 
 use crate::{
   ui::Table,
-  workspace::{Course, UserId, Users},
+  workspace::{Assignment, Course, UserId, Users},
 };
 
 #[derive(serde::Deserialize)]
@@ -61,23 +61,16 @@ impl Course {
 
     Users::from_vec(users)
   }
+}
 
-  pub fn download_submissions(&self, assignment: &str, dry_run: bool) {
-    let assignment_id = self
-      .settings
-      .assignment
-      .get(assignment)
-      .unwrap_or_else(|| {
-        eprintln!("error: assignment '{assignment}' not found in settings.toml");
-        std::process::exit(1);
-      })
-      .id;
-
+impl Assignment<'_> {
+  pub fn download_submissions(&self, dry_run: bool) {
     let token = std::fs::read_to_string("../token.txt").unwrap().trim().to_string();
 
     let mut submissions: Vec<Submission> = ureq::get(format!(
-      "https://wwu.instructure.com/api/v1/sections/{section}/assignments/{assignment_id}/submissions?per_page=100",
-      section = self.settings.section,
+      "https://wwu.instructure.com/api/v1/sections/{section}/assignments/{assignment}/submissions?per_page=100",
+      section = self.course.settings.section,
+      assignment = self.id,
     ))
     .header("Authorization", &format!("Bearer {token}"))
     .header("Accept", "application/json")
@@ -87,11 +80,10 @@ impl Course {
     .read_json()
     .unwrap();
 
-    let users = self.users();
+    let users = self.course.users();
     submissions.sort_by_key(|s| &users.get(&s.user_id).unwrap().sortable_name);
 
-    let directory = self.path.join(assignment);
-    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::create_dir_all(&self.path).unwrap();
 
     let mut table = Table::new(&["Name", "Filename", "Score", "Status"]);
     for s in &submissions {
@@ -122,7 +114,7 @@ impl Course {
       let attachment = s.attachments[0].clone();
 
       let token = token.clone();
-      let directory = directory.clone();
+      let directory = self.path.clone();
       let table = table.clone();
       handles.push(std::thread::spawn(move || {
         let content = ureq::get(&attachment.url)
