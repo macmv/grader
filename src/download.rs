@@ -43,15 +43,13 @@ pub fn list_sections(course: &str) {
   println!("{res}");
 }
 
-impl Course {
+impl Course<'_> {
   pub fn fetch_users(&self) -> Users {
-    let token = std::fs::read_to_string("../token.txt").unwrap().trim().to_string();
-
     let users: Vec<User> = ureq::get(format!(
       "https://wwu.instructure.com/api/v1/sections/{section}/users?per_page=100",
       section = self.settings.section
     ))
-    .header("Authorization", &format!("Bearer {token}"))
+    .header("Authorization", &format!("Bearer {}", self.workspace.token))
     .header("Accept", "application/json")
     .call()
     .unwrap()
@@ -65,14 +63,12 @@ impl Course {
 
 impl Assignment<'_> {
   pub fn download_submissions(&self, dry_run: bool) {
-    let token = std::fs::read_to_string("../token.txt").unwrap().trim().to_string();
-
     let mut submissions: Vec<Submission> = ureq::get(format!(
       "https://wwu.instructure.com/api/v1/sections/{section}/assignments/{assignment}/submissions?per_page=100",
       section = self.course.settings.section,
       assignment = self.id,
     ))
-    .header("Authorization", &format!("Bearer {token}"))
+    .header("Authorization", &format!("Bearer {}", self.course.workspace.token))
     .header("Accept", "application/json")
     .call()
     .unwrap()
@@ -113,7 +109,7 @@ impl Assignment<'_> {
       let user = users[&s.user_id].clone();
       let attachment = s.attachments[0].clone();
 
-      let token = token.clone();
+      let token = self.course.workspace.token.clone();
       let directory = self.path.clone();
       let table = table.clone();
       handles.push(std::thread::spawn(move || {

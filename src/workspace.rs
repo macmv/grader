@@ -6,17 +6,20 @@ use serde::Deserialize;
 use crate::{download::User, settings::Settings};
 
 pub struct Workspace {
-  pub root: PathBuf,
+  pub token: String,
+  pub root:  PathBuf,
 }
 
-pub struct Course {
+pub struct Course<'a> {
+  pub workspace: &'a Workspace,
+
   pub path:     PathBuf,
   pub settings: Settings,
   user_data:    OnceCell<Users>,
 }
 
 pub struct Assignment<'a> {
-  pub course: &'a Course,
+  pub course: &'a Course<'a>,
 
   pub path: PathBuf,
   pub id:   u32,
@@ -30,7 +33,7 @@ pub struct Users {
 #[serde(transparent)]
 pub struct UserId(pub u32);
 
-impl Course {
+impl Course<'_> {
   pub fn users(&self) -> &HashMap<UserId, User> {
     &self.user_data.get_or_init(|| self.fetch_users()).users
   }
@@ -60,9 +63,14 @@ impl Course {
 }
 
 impl Workspace {
-  pub fn new() -> Self { Workspace { root: PathBuf::from("/home/macmv/Desktop/school/wwu/ta") } }
+  pub fn new() -> Self {
+    let root = PathBuf::from("/home/macmv/Desktop/school/wwu/ta");
+    let token = std::fs::read_to_string(root.join("token.txt")).unwrap().trim().to_string();
 
-  pub fn current_course(&self) -> anyhow::Result<Course> {
+    Workspace { root, token }
+  }
+
+  pub fn current_course(&self) -> anyhow::Result<Course<'_>> {
     let pwd = std::env::current_dir()?;
     let relative = pwd
       .strip_prefix(&self.root)
@@ -74,7 +82,7 @@ impl Workspace {
     self.course(name.as_os_str().to_str().unwrap())
   }
 
-  pub fn course(&self, name: &str) -> anyhow::Result<Course> {
+  pub fn course(&self, name: &str) -> anyhow::Result<Course<'_>> {
     let valid = name.len() == 8
       && name[..4].chars().all(|c| c.is_ascii_uppercase())
       && name.as_bytes()[4] == b'-'
@@ -85,7 +93,7 @@ impl Workspace {
     let settings_str = std::fs::read_to_string(path.join("settings.toml"))
       .context("failed to read settings.toml. is this course setup?")?;
     let settings = toml::from_str(&settings_str)?;
-    Ok(Course { path, settings, user_data: OnceCell::new() })
+    Ok(Course { workspace: self, path, settings, user_data: OnceCell::new() })
   }
 }
 
