@@ -77,7 +77,10 @@ impl Assignment<'_> {
     .unwrap();
 
     let users = self.course.users();
-    submissions.sort_by_key(|s| &users.get(&s.user_id).unwrap().sortable_name);
+    submissions.sort_by_key(|s| {
+      let user = &users[&s.user_id];
+      (user.name == "Test Student", &user.sortable_name)
+    });
 
     std::fs::create_dir_all(&self.path).unwrap();
 
