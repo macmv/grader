@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 #[derive(serde::Deserialize)]
+#[allow(dead_code)]
 pub struct Settings {
   pub course:  u32,
   pub section: u32,
