@@ -77,7 +77,7 @@ fn main() {
           .collect()
       };
 
-      compile::compile_files(&files)
+      compile::compile_files(&assignment, &files)
     }
 
     Cmd::Sections { .. } => unreachable!(),

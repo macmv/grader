@@ -8,7 +8,7 @@ use std::{
 use anyhow::{Context, bail};
 use owo_colors::OwoColorize;
 
-use crate::ui::Table;
+use crate::{ui::Table, workspace::Assignment};
 
 struct CompileResult {
   file:      PathBuf,
@@ -30,7 +30,7 @@ enum Status {
 }
 struct StatusPretty(Status);
 
-pub fn compile_files(files: &[PathBuf]) {
+pub fn compile_files(assignment: &Assignment, files: &[PathBuf]) {
   let mut table = Table::new(&["File", "Status"]);
   for f in files {
     table.add_row(&[f.file_name().unwrap().to_str().unwrap(), "..."]);
@@ -38,23 +38,26 @@ pub fn compile_files(files: &[PathBuf]) {
   table.display();
 
   let table = Arc::new(Mutex::new(table));
-  let mut handles = vec![];
 
-  for (i, file) in files.iter().enumerate() {
-    let file = file.clone();
-    let table = table.clone();
-    handles.push(std::thread::spawn(move || {
-      let result = compile(&file);
-      let status = match &result {
-        Ok(r) => r.status_pretty().to_string(),
-        Err(_) => "internal error".red().to_string(),
-      };
-      table.lock().unwrap().update_row(i, |row| row.cols[1] = status);
-      result
-    }));
-  }
+  let results = std::thread::scope(|scope| {
+    let mut handles = vec![];
 
-  let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    for (i, file) in files.iter().enumerate() {
+      let file = file.clone();
+      let table = table.clone();
+      handles.push(scope.spawn(move || {
+        let result = assignment.compile(&file);
+        let status = match &result {
+          Ok(r) => r.status_pretty().to_string(),
+          Err(_) => "internal error".red().to_string(),
+        };
+        table.lock().unwrap().update_row(i, |row| row.cols[1] = status);
+        result
+      }));
+    }
+
+    handles.into_iter().map(|h| h.join().unwrap()).collect::<Vec<_>>()
+  });
 
   for (file, result) in files.iter().zip(results) {
     match result {
@@ -124,46 +127,48 @@ fn ssh(cmd: &str) -> anyhow::Result<RemoteOutput> {
   Ok(RemoteOutput { stdout, stderr, exit_code })
 }
 
-fn compile(file: &Path) -> anyhow::Result<CompileResult> {
-  let file = file.canonicalize()?;
+impl Assignment<'_> {
+  fn compile(&self, file: &Path) -> anyhow::Result<CompileResult> {
+    let file = file.canonicalize()?;
 
-  let file_str = file.to_str().context("file path is not valid utf-8")?;
-  let path = file_str
-    .strip_prefix("/home/macmv/Desktop/school/wwu/ta/")
-    .context("file is not in the 'ta' directory")?;
+    let file_str = file.to_str().context("file path is not valid utf-8")?;
+    let path = file_str
+      .strip_prefix("/home/macmv/Desktop/school/wwu/ta/")
+      .context("file is not in the 'ta' directory")?;
 
-  if !(path.chars().filter(|c| *c == '/').count() == 2 && path.ends_with(".c")) {
-    bail!("invalid path: '{path}'\nshould have the format ta/<class>/<assignment>/<file>.c");
+    if !(path.chars().filter(|c| *c == '/').count() == 2 && path.ends_with(".c")) {
+      bail!("invalid path: '{path}'\nshould have the format ta/<class>/<assignment>/<file>.c");
+    }
+
+    let parent = &path[..path.rfind('/').unwrap()];
+    ssh(&format!("mkdir -p ~/Desktop/ta/{parent}")).context("failed to create remote directory")?;
+
+    let remote_path = format!("~/Desktop/ta/{}", path);
+    let remote_build = format!("~/Desktop/ta/{}", path.strip_suffix(".c").unwrap());
+    let gcc_flags = "-Wall -Wextra -pedantic -fdiagnostics-color=always";
+
+    let status = Command::new("scp")
+      .arg(file_str)
+      .arg(&format!("wwu:{remote_path}"))
+      .stdout(Stdio::null())
+      .stderr(Stdio::null())
+      .status()
+      .context("failed to run scp")?;
+
+    if !status.success() {
+      bail!("scp failed with {}", status);
+    }
+
+    let result =
+      ssh(&format!("gcc {remote_path} -o {remote_build} {gcc_flags}")).context("gcc failed")?;
+
+    Ok(CompileResult {
+      file:      file.to_path_buf(),
+      stdout:    result.stdout,
+      stderr:    result.stderr,
+      exit_code: result.exit_code,
+    })
   }
-
-  let parent = &path[..path.rfind('/').unwrap()];
-  ssh(&format!("mkdir -p ~/Desktop/ta/{parent}")).context("failed to create remote directory")?;
-
-  let remote_path = format!("~/Desktop/ta/{}", path);
-  let remote_build = format!("~/Desktop/ta/{}", path.strip_suffix(".c").unwrap());
-  let gcc_flags = "-Wall -Wextra -pedantic -fdiagnostics-color=always";
-
-  let status = Command::new("scp")
-    .arg(file_str)
-    .arg(&format!("wwu:{remote_path}"))
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .status()
-    .context("failed to run scp")?;
-
-  if !status.success() {
-    bail!("scp failed with {}", status);
-  }
-
-  let result =
-    ssh(&format!("gcc {remote_path} -o {remote_build} {gcc_flags}")).context("gcc failed")?;
-
-  Ok(CompileResult {
-    file:      file.to_path_buf(),
-    stdout:    result.stdout,
-    stderr:    result.stderr,
-    exit_code: result.exit_code,
-  })
 }
 
 fn print_result(result: &CompileResult) {
