@@ -1,4 +1,4 @@
-use std::{cell::OnceCell, collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::OnceLock};
 
 use anyhow::Context;
 use serde::Deserialize;
@@ -15,7 +15,7 @@ pub struct Course<'a> {
 
   pub path:     PathBuf,
   pub settings: Settings,
-  user_data:    OnceCell<Users>,
+  user_data:    OnceLock<Users>,
 }
 
 pub struct Assignment<'a> {
@@ -93,7 +93,7 @@ impl Workspace {
     let settings_str = std::fs::read_to_string(path.join("settings.toml"))
       .context("failed to read settings.toml. is this course setup?")?;
     let settings = toml::from_str(&settings_str)?;
-    Ok(Course { workspace: self, path, settings, user_data: OnceCell::new() })
+    Ok(Course { workspace: self, path, settings, user_data: OnceLock::new() })
   }
 }
 
