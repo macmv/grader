@@ -172,14 +172,23 @@ impl Assignment<'_> {
     }
 
     let cmd = self.compile_command(&remote_path);
-    let result = ssh(&cmd).context("gcc failed")?;
+    if cmd.is_empty() {
+      Ok(CompileResult {
+        file:      file.to_path_buf(),
+        stdout:    String::new(),
+        stderr:    String::new(),
+        exit_code: 0,
+      })
+    } else {
+      let result = ssh(&cmd).context("gcc failed")?;
 
-    Ok(CompileResult {
-      file:      file.to_path_buf(),
-      stdout:    result.stdout,
-      stderr:    result.stderr,
-      exit_code: result.exit_code,
-    })
+      Ok(CompileResult {
+        file:      file.to_path_buf(),
+        stdout:    result.stdout,
+        stderr:    result.stderr,
+        exit_code: result.exit_code,
+      })
+    }
   }
 }
 
