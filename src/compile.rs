@@ -127,7 +127,21 @@ fn ssh(cmd: &str) -> anyhow::Result<RemoteOutput> {
   Ok(RemoteOutput { stdout, stderr, exit_code })
 }
 
+const GCC_FLAGS: &str = "-Wall -Wextra -pedantic -fdiagnostics-color=always";
+
 impl Assignment<'_> {
+  fn compile_command(&self, remote_path: &str) -> String {
+    let mut cmd =
+      self.settings.compile.replace("%REMOTE_PATH", remote_path).replace("%GCC_FLAGS", GCC_FLAGS);
+
+    if cmd.contains("%REMOTE_BUILD") {
+      let remote_build = remote_path.strip_suffix(".c").unwrap();
+      cmd = cmd.replace("%REMOTE_BUILD", &remote_build)
+    }
+
+    cmd
+  }
+
   fn compile(&self, file: &Path) -> anyhow::Result<CompileResult> {
     let file = file.canonicalize()?;
 
@@ -144,8 +158,6 @@ impl Assignment<'_> {
     ssh(&format!("mkdir -p ~/Desktop/ta/{parent}")).context("failed to create remote directory")?;
 
     let remote_path = format!("~/Desktop/ta/{}", path);
-    let remote_build = format!("~/Desktop/ta/{}", path.strip_suffix(".c").unwrap());
-    let gcc_flags = "-Wall -Wextra -pedantic -fdiagnostics-color=always";
 
     let status = Command::new("scp")
       .arg(file_str)
@@ -159,8 +171,8 @@ impl Assignment<'_> {
       bail!("scp failed with {}", status);
     }
 
-    let result =
-      ssh(&format!("gcc {remote_path} -o {remote_build} {gcc_flags}")).context("gcc failed")?;
+    let cmd = self.compile_command(&remote_path);
+    let result = ssh(&cmd).context("gcc failed")?;
 
     Ok(CompileResult {
       file:      file.to_path_buf(),
