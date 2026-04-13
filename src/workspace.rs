@@ -21,8 +21,8 @@ pub struct Course<'a> {
 pub struct Assignment<'a> {
   pub course: &'a Course<'a>,
 
-  pub path: PathBuf,
-  pub id:   u32,
+  pub path:     PathBuf,
+  pub settings: crate::settings::Assignment,
 }
 
 pub struct Users {
@@ -51,14 +51,14 @@ impl Course<'_> {
   }
 
   pub fn assignment(&self, name: &str) -> anyhow::Result<Assignment<'_>> {
-    let id = self
+    let settings = self
       .settings
       .assignment
       .get(name)
       .ok_or_else(|| anyhow::anyhow!("assignment '{name}' not found in settings.toml"))?
-      .id;
+      .clone();
 
-    Ok(Assignment { course: self, path: self.path.join(name), id })
+    Ok(Assignment { course: self, path: self.path.join(name), settings })
   }
 }
 

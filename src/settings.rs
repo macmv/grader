@@ -9,7 +9,7 @@ pub struct Settings {
   pub assignment: HashMap<String, Assignment>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 pub struct Assignment {
   pub id: u32,
 }

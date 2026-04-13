@@ -66,7 +66,7 @@ impl Assignment<'_> {
     let mut submissions: Vec<Submission> = ureq::get(format!(
       "https://wwu.instructure.com/api/v1/sections/{section}/assignments/{assignment}/submissions?per_page=100",
       section = self.course.settings.section,
-      assignment = self.id,
+      assignment = self.settings.id,
     ))
     .header("Authorization", &format!("Bearer {}", self.course.workspace.token))
     .header("Accept", "application/json")
