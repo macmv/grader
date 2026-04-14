@@ -150,8 +150,8 @@ impl Assignment<'_> {
       .strip_prefix("/home/macmv/Desktop/school/wwu/ta/")
       .context("file is not in the 'ta' directory")?;
 
-    if !(path.chars().filter(|c| *c == '/').count() == 2 && path.ends_with(".c")) {
-      bail!("invalid path: '{path}'\nshould have the format ta/<class>/<assignment>/<file>.c");
+    if path.chars().filter(|c| *c == '/').count() != 2 {
+      bail!("invalid path: '{path}'\nshould have the format ta/<class>/<assignment>/<file>");
     }
 
     let parent = &path[..path.rfind('/').unwrap()];
