@@ -64,12 +64,26 @@ impl Course<'_> {
 
 impl Workspace {
   pub fn new() -> Self {
-    let root = PathBuf::from("/home/macmv/Desktop/school/wwu/ta");
+    let root = find_root().expect("could not find ta.toml in current directory or any parent");
     let token = std::fs::read_to_string(root.join("token.txt")).unwrap().trim().to_string();
 
     Workspace { root, token }
   }
+}
 
+fn find_root() -> Option<PathBuf> {
+  let mut dir = std::env::current_dir().ok()?;
+  loop {
+    if dir.join("ta.toml").exists() {
+      return Some(dir);
+    }
+    if !dir.pop() {
+      return None;
+    }
+  }
+}
+
+impl Workspace {
   pub fn current_course(&self) -> anyhow::Result<Course<'_>> {
     let pwd = std::env::current_dir()?;
     let relative = pwd
