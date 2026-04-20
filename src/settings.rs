@@ -11,6 +11,7 @@ pub struct Settings {
 
 #[derive(Clone, serde::Deserialize)]
 pub struct Assignment {
-  pub id:      u32,
-  pub compile: String,
+  pub id:       u32,
+  pub compile:  String,
+  pub filename: Option<String>,
 }

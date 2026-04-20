@@ -95,9 +95,12 @@ impl Assignment<'_> {
       if s.attachments.is_empty() {
         table.add_row(&[&user.name, "<not submitted>", &score, ""]);
       } else {
-        let a = &s.attachments[0];
-        let path = self.path.join(format!("{}-{}", snakeify(&user.sortable_name), a.display_name));
-        table.add_row(&[&user.name, &path.file_name().unwrap().to_string_lossy(), &score, "..."]);
+        table.add_row(&[
+          &user.name,
+          &self.attachment_filename(user, &s).unwrap_or_else(|e| e),
+          &score,
+          "...",
+        ]);
       };
     }
 
@@ -111,8 +114,9 @@ impl Assignment<'_> {
         continue;
       }
 
+      let Ok(attachment) = self.find_attachment(s) else { continue };
       let user = users[&s.user_id].clone();
-      let attachment = s.attachments[0].clone();
+      let attachment = s.attachments[attachment].clone();
 
       let token = self.course.workspace.token.clone();
       let table = table.clone();
@@ -148,6 +152,36 @@ impl Assignment<'_> {
     }
 
     handles.into_iter().for_each(|h| h.join().unwrap());
+  }
+
+  fn submission_filename(&self, user: &User, attachment: &Attachment) -> String {
+    let path =
+      self.path.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
+    path.file_name().unwrap().to_string_lossy().to_string()
+  }
+
+  fn attachment_filename(&self, user: &User, s: &Submission) -> Result<String, String> {
+    let i = self.find_attachment(s)?;
+    Ok(self.submission_filename(user, &s.attachments[i]))
+  }
+
+  fn find_attachment(&self, s: &Submission) -> Result<usize, String> {
+    let res = if let Some(filename) = &self.settings.filename {
+      s.attachments
+        .iter()
+        .position(|a| a.display_name.to_lowercase().contains(&filename.to_lowercase()))
+        .ok_or_else(|| format!("error: couldn't find \"{}\" in attachments", filename))
+    } else {
+      if s.attachments.len() != 1 {
+        Err(String::from("error: multiple files submitted"))
+      } else {
+        Ok(0)
+      }
+    };
+
+    res.map_err(|e| {
+      format!("{e}: {:?}", s.attachments.iter().map(|a| &a.display_name).collect::<Vec<_>>())
+    })
   }
 }
 
