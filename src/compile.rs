@@ -155,9 +155,25 @@ impl Assignment<'_> {
     }
 
     let parent = &path[..path.rfind('/').unwrap()];
-    ssh(&format!("mkdir -p ~/Desktop/ta/{parent}")).context("failed to create remote directory")?;
 
-    let remote_path = format!("~/Desktop/ta/{}", path);
+    let remote_path = if self.settings.separate_directories {
+      let filename = &path[path.rfind('/').unwrap() + 1..];
+      let second_dash = filename
+        .char_indices()
+        .filter(|(_, c)| *c == '-')
+        .nth(1)
+        .map(|(i, _)| i)
+        .context("filename does not contain a second '-'")?;
+      let student = &filename[..second_dash];
+      let original = &filename[second_dash + 1..];
+      ssh(&format!("mkdir -p ~/Desktop/ta/{parent}/{student}"))
+        .context("failed to create remote directory")?;
+      format!("~/Desktop/ta/{parent}/{student}/{original}")
+    } else {
+      ssh(&format!("mkdir -p ~/Desktop/ta/{parent}"))
+        .context("failed to create remote directory")?;
+      format!("~/Desktop/ta/{}", path)
+    };
 
     let status = Command::new("scp")
       .arg(file_str)

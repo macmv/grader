@@ -10,8 +10,13 @@ pub struct Settings {
 }
 
 #[derive(Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Assignment {
   pub id:       u32,
+  #[serde(default)]
   pub compile:  String,
   pub filename: Option<String>,
+
+  #[serde(default)]
+  pub separate_directories: bool,
 }
