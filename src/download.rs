@@ -167,10 +167,11 @@ impl Assignment<'_> {
 
   fn find_attachment(&self, s: &Submission) -> Result<usize, String> {
     let res = if let Some(filename) = &self.settings.filename {
-      s.attachments
-        .iter()
-        .position(|a| filename_matches(&a.display_name, filename))
-        .ok_or_else(|| format!("error: couldn't find \"{}\" in attachments", filename))
+      match s.attachments.iter().position(|a| filename_matches(&a.display_name, filename)) {
+        Some(i) => Ok(i),
+        None if s.attachments.len() == 1 => Ok(0),
+        None => Err(format!("error: couldn't find \"{}\" in attachments", filename)),
+      }
     } else {
       if s.attachments.len() != 1 {
         Err(String::from("error: multiple files submitted"))
