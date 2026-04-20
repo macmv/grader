@@ -147,7 +147,7 @@ impl Assignment<'_> {
 
     let file_str = file.to_str().context("file path is not valid utf-8")?;
     let path = file_str
-      .strip_prefix(self.course.workspace.root.to_str().unwrap())
+      .strip_prefix(&format!("{}/", self.course.workspace.root.to_str().unwrap()))
       .context("file is not in the 'ta' directory")?;
 
     if path.chars().filter(|c| *c == '/').count() != 2 {
