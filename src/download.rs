@@ -169,7 +169,7 @@ impl Assignment<'_> {
     let res = if let Some(filename) = &self.settings.filename {
       s.attachments
         .iter()
-        .position(|a| a.display_name.to_lowercase().contains(&filename.to_lowercase()))
+        .position(|a| filename_matches(&a.display_name, filename))
         .ok_or_else(|| format!("error: couldn't find \"{}\" in attachments", filename))
     } else {
       if s.attachments.len() != 1 {
@@ -183,6 +183,43 @@ impl Assignment<'_> {
       format!("{e}: {:?}", s.attachments.iter().map(|a| &a.display_name).collect::<Vec<_>>())
     })
   }
+}
+
+// Matches 'foo.c' against 'foo.c', 'foo-1.c', 'foo-2.c', etc.
+// Also works without extensions: 'foo' matches 'foo', 'foo-1', etc.
+fn filename_matches(display_name: &str, expected: &str) -> bool {
+  let display = display_name.to_lowercase();
+  let exp = expected.to_lowercase();
+
+  let (exp_stem, exp_ext) = match exp.rfind('.') {
+    Some(i) => (&exp[..i], Some(&exp[i..])),
+    None => (exp.as_str(), None),
+  };
+
+  let (display_stem, display_ext) = match display.rfind('.') {
+    Some(i) => (&display[..i], Some(&display[i..])),
+    None => (display.as_str(), None),
+  };
+
+  if display_ext != exp_ext {
+    return false;
+  }
+
+  if display_stem == exp_stem {
+    return true;
+  }
+
+  if let Some(rest) = display_stem.strip_prefix(exp_stem) {
+    let bytes = rest.as_bytes();
+    if bytes.first() == Some(&b'-')
+      && bytes[1..].iter().all(|b| b.is_ascii_digit())
+      && bytes.len() > 1
+    {
+      return true;
+    }
+  }
+
+  false
 }
 
 fn snakeify(name: &str) -> String {
