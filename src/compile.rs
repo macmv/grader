@@ -129,14 +129,17 @@ fn ssh(cmd: &str) -> anyhow::Result<RemoteOutput> {
 
 const GCC_FLAGS: &str = "-Wall -Wextra -pedantic -fdiagnostics-color=always";
 
+fn shell_escape(s: &str) -> String { format!("'{}'", s.replace('\'', "'\\''")) }
+
 impl Assignment<'_> {
   fn compile_command(&self, remote_path: &str) -> String {
+    let quoted_path = shell_escape(remote_path);
     let mut cmd =
-      self.settings.compile.replace("%REMOTE_PATH", remote_path).replace("%GCC_FLAGS", GCC_FLAGS);
+      self.settings.compile.replace("%REMOTE_PATH", &quoted_path).replace("%GCC_FLAGS", GCC_FLAGS);
 
     if cmd.contains("%REMOTE_BUILD") {
-      let remote_build = remote_path.strip_suffix(".c").unwrap();
-      cmd = cmd.replace("%REMOTE_BUILD", &remote_build)
+      let remote_build = shell_escape(remote_path.strip_suffix(".c").unwrap());
+      cmd = cmd.replace("%REMOTE_BUILD", &remote_build);
     }
 
     cmd
@@ -166,25 +169,24 @@ impl Assignment<'_> {
         .context("filename does not contain a second '-'")?;
       let student = &filename[..second_dash];
       let original = &filename[second_dash + 1..];
-      ssh(&format!("mkdir -p ~/Desktop/ta/{parent}/{student}"))
+      ssh(&format!("mkdir -p $HOME/Desktop/ta/{}/{}", shell_escape(parent), shell_escape(student)))
         .context("failed to create remote directory")?;
-      format!("~/Desktop/ta/{parent}/{student}/{original}")
+      format!("/home/macnean2/Desktop/ta/{}/{}/{}", parent, student, original)
     } else {
-      ssh(&format!("mkdir -p ~/Desktop/ta/{parent}"))
+      ssh(&format!("mkdir -p $HOME/Desktop/ta/{}", shell_escape(parent)))
         .context("failed to create remote directory")?;
-      format!("~/Desktop/ta/{}", path)
+      format!("/home/macnean2/Desktop/ta/{}", path)
     };
 
-    let status = Command::new("scp")
+    let out = Command::new("scp")
       .arg(file_str)
       .arg(&format!("wwu:{remote_path}"))
-      .stdout(Stdio::null())
-      .stderr(Stdio::null())
-      .status()
+      .output()
       .context("failed to run scp")?;
 
-    if !status.success() {
-      bail!("scp failed with {}", status);
+    if !out.status.success() {
+      let stderr = String::from_utf8_lossy(&out.stderr);
+      bail!("scp failed:\n{stderr}");
     }
 
     let cmd = self.compile_command(&remote_path);
