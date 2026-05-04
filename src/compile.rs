@@ -137,9 +137,18 @@ impl Assignment<'_> {
     let mut cmd =
       self.settings.compile.replace("%REMOTE_PATH", &quoted_path).replace("%GCC_FLAGS", GCC_FLAGS);
 
-    if cmd.contains("%REMOTE_BUILD") {
-      let remote_build = shell_escape(remote_path.strip_suffix(".c").unwrap());
-      cmd = cmd.replace("%REMOTE_BUILD", &remote_build);
+    if cmd.contains("%REMOTE_OUT") {
+      let out_path = remote_path
+        .strip_suffix(".c")
+        .unwrap_or(remote_path)
+        .strip_suffix(".s")
+        .unwrap_or(remote_path);
+
+      if out_path == remote_path {
+        cmd = cmd.replace("%REMOTE_OUT", "");
+      } else {
+        cmd = cmd.replace("%REMOTE_OUT", &shell_escape(out_path));
+      }
     }
 
     cmd
