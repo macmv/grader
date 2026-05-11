@@ -138,11 +138,8 @@ impl Assignment<'_> {
       self.settings.compile.replace("%REMOTE_PATH", &quoted_path).replace("%GCC_FLAGS", GCC_FLAGS);
 
     if cmd.contains("%REMOTE_OUT") {
-      let out_path = remote_path
-        .strip_suffix(".c")
-        .unwrap_or(remote_path)
-        .strip_suffix(".s")
-        .unwrap_or(remote_path);
+      let out_path = remote_path.strip_suffix(".c").unwrap_or(remote_path);
+      let out_path = out_path.strip_suffix(".s").unwrap_or(out_path);
 
       if out_path == remote_path {
         cmd = cmd.replace("%REMOTE_OUT", "");
