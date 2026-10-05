@@ -1,4 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::{
+  path::PathBuf,
+  sync::{Arc, Mutex},
+  thread::JoinHandle,
+};
 
 use owo_colors::OwoColorize;
 
@@ -114,41 +118,68 @@ impl Assignment<'_> {
         continue;
       }
 
-      let Ok(attachment) = self.find_attachment(s) else { continue };
       let user = users[&s.user_id].clone();
-      let attachment = s.attachments[attachment].clone();
-
-      let token = self.course.workspace.token.clone();
       let table = table.clone();
-      let path =
-        self.path.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
 
-      handles.push(std::thread::spawn(move || {
-        let content = ureq::get(&attachment.url)
-          .header("Authorization", &format!("Bearer {token}"))
-          .call()
-          .unwrap()
-          .body_mut()
-          .read_to_vec()
-          .unwrap();
+      if self.settings.separate_directories {
+        let changed = Arc::new(Mutex::new(false));
 
-        let status = if !path.exists() {
-          "new".yellow().to_string()
-        } else {
-          let existing = std::fs::read(&path).unwrap();
-          if existing != content {
-            "changed".yellow().to_string()
-          } else {
-            "unchanged".green().to_string()
-          }
-        };
+        for attachment in s.attachments.iter() {
+          let path = self.path.join(format!(
+            "{}-{}",
+            snakeify(&user.sortable_name),
+            attachment.display_name
+          ));
 
-        table.lock().unwrap().update_row(i, |row| row.cols[3] = status);
+          let changed = changed.clone();
+          let table = table.clone();
+          handles.push(self.spawn_download(
+            path.clone(),
+            attachment.clone(),
+            dry_run,
+            move |content| {
+              let mut changed = changed.lock().unwrap();
 
-        if !dry_run {
-          std::fs::write(&path, &content).unwrap();
+              if !path.exists() {
+                *changed = true;
+              } else {
+                let existing = std::fs::read(&path).unwrap();
+                if existing != content {
+                  *changed = true;
+                }
+              };
+
+              let status = if *changed {
+                "changed".yellow().to_string()
+              } else {
+                "unchanged".green().to_string()
+              };
+
+              table.lock().unwrap().update_row(i, |row| row.cols[3] = status);
+            },
+          ));
         }
-      }));
+      } else {
+        let Ok(attachment) = self.find_attachment(s) else { continue };
+        let attachment = s.attachments[attachment].clone();
+        let path =
+          self.path.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
+
+        handles.push(self.spawn_download(path.clone(), attachment, dry_run, move |content| {
+          let status = if !path.exists() {
+            "new".yellow().to_string()
+          } else {
+            let existing = std::fs::read(&path).unwrap();
+            if existing != content {
+              "changed".yellow().to_string()
+            } else {
+              "unchanged".green().to_string()
+            }
+          };
+
+          table.lock().unwrap().update_row(i, |row| row.cols[3] = status);
+        }));
+      }
     }
 
     handles.into_iter().for_each(|h| h.join().unwrap());
@@ -161,6 +192,12 @@ impl Assignment<'_> {
   }
 
   fn attachment_filename(&self, user: &User, s: &Submission) -> Result<String, String> {
+    if self.settings.separate_directories {
+      return Ok(
+        s.attachments.iter().map(|a| a.display_name.as_str()).collect::<Vec<_>>().join(", "),
+      );
+    }
+
     let i = self.find_attachment(s)?;
     Ok(self.submission_filename(user, &s.attachments[i]))
   }
@@ -182,6 +219,32 @@ impl Assignment<'_> {
 
     res.map_err(|e| {
       format!("{e}: {:?}", s.attachments.iter().map(|a| &a.display_name).collect::<Vec<_>>())
+    })
+  }
+
+  fn spawn_download(
+    &self,
+    path: PathBuf,
+    attachment: Attachment,
+    dry_run: bool,
+    on_complete: impl FnOnce(&[u8]) + Send + 'static,
+  ) -> JoinHandle<()> {
+    let token = self.course.workspace.token.clone();
+
+    std::thread::spawn(move || {
+      let content = ureq::get(&attachment.url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .call()
+        .unwrap()
+        .body_mut()
+        .read_to_vec()
+        .unwrap();
+
+      on_complete(&content);
+
+      if !dry_run {
+        std::fs::write(&path, &content).unwrap();
+      }
     })
   }
 }
