@@ -24,7 +24,11 @@ compile  = "gcc %GCC_FLAGS %REMOTE_PATH -o %REMOTE_BUILD"
 filename = "main.c"
 
 # place each student's file in its own subdirectory
-separate_directories = true
+separate-directories = true
+
+[assignment.hw2.download]
+# download into <student>/<file> instead of <student>-<file>
+separate-directories = true
 ```
 
 Compile string placeholders:
@@ -41,7 +45,7 @@ All commands infer the course and assignment from the current directory. Use `--
 ```
 grader download [--dry-run]
 ```
-Downloads all submissions for the current assignment into `<course>/<assignment>/`. Files are named `<student>-<filename>`. Normally one file is picked per student; with `separate_directories`, every attachment is downloaded.
+Downloads all submissions for the current assignment into `<course>/<assignment>/`. Files are named `<student>-<filename>`. Normally one file is picked per student; with `separate-directories`, every attachment is downloaded.
 
 ```
 grader compile [files...]
@@ -55,7 +59,7 @@ Host wwu
   Port 922
 ```
 
-When `separate_directories` is set, each student's file is placed under `<assignment>/<student>/` on the remote (student name is derived by splitting the local filename at the second `-`).
+When `separate-directories` is set, each student's file is placed under `<assignment>/<student>/` on the remote (student name is derived by splitting the local filename at the second `-`).
 
 ## Example layout
 

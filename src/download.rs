@@ -141,11 +141,17 @@ impl Assignment<'_> {
   }
 
   fn submission_path(&self, user: &User, attachment: &Attachment) -> PathBuf {
-    self.path.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name))
+    let student = snakeify(&user.sortable_name);
+    if self.settings.download.separate_directories {
+      self.path.join(student).join(&attachment.display_name)
+    } else {
+      self.path.join(format!("{student}-{}", attachment.display_name))
+    }
   }
 
   fn submission_filename(&self, user: &User, attachment: &Attachment) -> String {
-    self.submission_path(user, attachment).file_name().unwrap().to_string_lossy().to_string()
+    let path = self.submission_path(user, attachment);
+    path.strip_prefix(&self.path).unwrap_or(&path).to_string_lossy().to_string()
   }
 
   fn attachment_filename(&self, user: &User, s: &Submission) -> Result<String, String> {
@@ -206,6 +212,9 @@ impl Assignment<'_> {
       on_complete(Status::of(&path, &content));
 
       if !dry_run {
+        if let Some(parent) = path.parent() {
+          std::fs::create_dir_all(parent).unwrap();
+        }
         std::fs::write(&path, &content).unwrap();
       }
     })

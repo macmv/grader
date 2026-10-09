@@ -9,6 +9,14 @@ pub struct Settings {
   pub assignment: HashMap<String, Assignment>,
 }
 
+#[derive(Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Download {
+  /// Download into `<student>/<file>` instead of `<student>-<file>`.
+  #[serde(default)]
+  pub separate_directories: bool,
+}
+
 #[derive(Clone, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Assignment {
@@ -19,4 +27,7 @@ pub struct Assignment {
 
   #[serde(default)]
   pub separate_directories: bool,
+
+  #[serde(default)]
+  pub download: Download,
 }
