@@ -155,14 +155,17 @@ impl Assignment<'_> {
   }
 
   fn attachment_filename(&self, user: &User, s: &Submission) -> Result<String, String> {
-    let names: Vec<_> =
-      self.selected_attachments(s)?.into_iter().map(|a| self.submission_filename(user, a)).collect();
+    let names: Vec<_> = self
+      .selected_attachments(s)?
+      .into_iter()
+      .map(|a| self.submission_filename(user, a))
+      .collect();
     Ok(names.join(", "))
   }
 
-  /// The attachments to download for a submission. With `separate_directories`, every
-  /// attachment is downloaded (they get grouped per-student on the remote). Otherwise, exactly
-  /// one attachment is picked.
+  /// The attachments to download for a submission. With `separate_directories`,
+  /// every attachment is downloaded (they get grouped per-student on the
+  /// remote). Otherwise, exactly one attachment is picked.
   fn selected_attachments<'a>(&self, s: &'a Submission) -> Result<Vec<&'a Attachment>, String> {
     if self.settings.separate_directories {
       Ok(s.attachments.iter().collect())
@@ -221,8 +224,8 @@ impl Assignment<'_> {
   }
 }
 
-/// How a downloaded file compares to what is already on disk. Ordered by how much attention it
-/// deserves.
+/// How a downloaded file compares to what is already on disk. Ordered by how
+/// much attention it deserves.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Status {
   Unchanged,
