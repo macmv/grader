@@ -41,7 +41,7 @@ All commands infer the course and assignment from the current directory. Use `--
 ```
 grader download [--dry-run]
 ```
-Downloads all submissions for the current assignment into `<course>/<assignment>/`. Files are named `<student>-<filename>`.
+Downloads all submissions for the current assignment into `<course>/<assignment>/`. Files are named `<student>-<filename>`. Normally one file is picked per student; with `separate_directories`, every attachment is downloaded.
 
 ```
 grader compile [files...]

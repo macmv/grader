@@ -1,5 +1,5 @@
 use std::{
-  path::PathBuf,
+  path::{Path, PathBuf},
   sync::{Arc, Mutex},
   thread::JoinHandle,
 };
@@ -114,92 +114,55 @@ impl Assignment<'_> {
     let mut handles = vec![];
 
     for (i, s) in submissions.iter().enumerate() {
-      if s.attachments.is_empty() {
-        continue;
-      }
+      let Ok(attachments) = self.selected_attachments(s) else { continue };
+      let user = &users[&s.user_id];
 
-      let user = users[&s.user_id].clone();
-      let table = table.clone();
+      // A row's status is the "most changed" status of any of its files.
+      let status = Arc::new(Mutex::new(Status::Unchanged));
 
-      if self.settings.separate_directories {
-        let changed = Arc::new(Mutex::new(false));
+      for attachment in attachments {
+        let table = table.clone();
+        let status = status.clone();
 
-        for attachment in s.attachments.iter() {
-          let path = self.path.join(format!(
-            "{}-{}",
-            snakeify(&user.sortable_name),
-            attachment.display_name
-          ));
-
-          let changed = changed.clone();
-          let table = table.clone();
-          handles.push(self.spawn_download(
-            path.clone(),
-            attachment.clone(),
-            dry_run,
-            move |content| {
-              let mut changed = changed.lock().unwrap();
-
-              if !path.exists() {
-                *changed = true;
-              } else {
-                let existing = std::fs::read(&path).unwrap();
-                if existing != content {
-                  *changed = true;
-                }
-              };
-
-              let status = if *changed {
-                "changed".yellow().to_string()
-              } else {
-                "unchanged".green().to_string()
-              };
-
-              table.lock().unwrap().update_row(i, |row| row.cols[3] = status);
-            },
-          ));
-        }
-      } else {
-        let Ok(attachment) = self.find_attachment(s) else { continue };
-        let attachment = s.attachments[attachment].clone();
-        let path =
-          self.path.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
-
-        handles.push(self.spawn_download(path.clone(), attachment, dry_run, move |content| {
-          let status = if !path.exists() {
-            "new".yellow().to_string()
-          } else {
-            let existing = std::fs::read(&path).unwrap();
-            if existing != content {
-              "changed".yellow().to_string()
-            } else {
-              "unchanged".green().to_string()
-            }
-          };
-
-          table.lock().unwrap().update_row(i, |row| row.cols[3] = status);
-        }));
+        handles.push(self.spawn_download(
+          self.submission_path(user, attachment),
+          attachment.url.clone(),
+          dry_run,
+          move |file_status| {
+            let mut status = status.lock().unwrap();
+            *status = (*status).max(file_status);
+            table.lock().unwrap().update_row(i, |row| row.cols[3] = status.label());
+          },
+        ));
       }
     }
 
     handles.into_iter().for_each(|h| h.join().unwrap());
   }
 
+  fn submission_path(&self, user: &User, attachment: &Attachment) -> PathBuf {
+    self.path.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name))
+  }
+
   fn submission_filename(&self, user: &User, attachment: &Attachment) -> String {
-    let path =
-      self.path.join(format!("{}-{}", snakeify(&user.sortable_name), attachment.display_name));
-    path.file_name().unwrap().to_string_lossy().to_string()
+    self.submission_path(user, attachment).file_name().unwrap().to_string_lossy().to_string()
   }
 
   fn attachment_filename(&self, user: &User, s: &Submission) -> Result<String, String> {
-    if self.settings.separate_directories {
-      return Ok(
-        s.attachments.iter().map(|a| a.display_name.as_str()).collect::<Vec<_>>().join(", "),
-      );
-    }
+    let names: Vec<_> =
+      self.selected_attachments(s)?.into_iter().map(|a| self.submission_filename(user, a)).collect();
+    Ok(names.join(", "))
+  }
 
-    let i = self.find_attachment(s)?;
-    Ok(self.submission_filename(user, &s.attachments[i]))
+  /// The attachments to download for a submission. With `separate_directories`, every
+  /// attachment is downloaded (they get grouped per-student on the remote). Otherwise, exactly
+  /// one attachment is picked.
+  fn selected_attachments<'a>(&self, s: &'a Submission) -> Result<Vec<&'a Attachment>, String> {
+    if self.settings.separate_directories {
+      Ok(s.attachments.iter().collect())
+    } else {
+      Ok(vec![&s.attachments[self.find_attachment(s)?]])
+    }
   }
 
   fn find_attachment(&self, s: &Submission) -> Result<usize, String> {
@@ -225,14 +188,14 @@ impl Assignment<'_> {
   fn spawn_download(
     &self,
     path: PathBuf,
-    attachment: Attachment,
+    url: String,
     dry_run: bool,
-    on_complete: impl FnOnce(&[u8]) + Send + 'static,
+    on_complete: impl FnOnce(Status) + Send + 'static,
   ) -> JoinHandle<()> {
     let token = self.course.workspace.token.clone();
 
     std::thread::spawn(move || {
-      let content = ureq::get(&attachment.url)
+      let content = ureq::get(&url)
         .header("Authorization", &format!("Bearer {token}"))
         .call()
         .unwrap()
@@ -240,12 +203,41 @@ impl Assignment<'_> {
         .read_to_vec()
         .unwrap();
 
-      on_complete(&content);
+      on_complete(Status::of(&path, &content));
 
       if !dry_run {
         std::fs::write(&path, &content).unwrap();
       }
     })
+  }
+}
+
+/// How a downloaded file compares to what is already on disk. Ordered by how much attention it
+/// deserves.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Status {
+  Unchanged,
+  Changed,
+  New,
+}
+
+impl Status {
+  fn of(path: &Path, content: &[u8]) -> Status {
+    if !path.exists() {
+      Status::New
+    } else if std::fs::read(path).unwrap() != content {
+      Status::Changed
+    } else {
+      Status::Unchanged
+    }
+  }
+
+  fn label(self) -> String {
+    match self {
+      Status::New => "new".yellow().to_string(),
+      Status::Changed => "changed".yellow().to_string(),
+      Status::Unchanged => "unchanged".green().to_string(),
+    }
   }
 }
 
