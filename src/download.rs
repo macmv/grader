@@ -252,7 +252,7 @@ impl Status {
 
 // Matches 'foo.c' against 'foo.c', 'foo-1.c', 'foo-2.c', etc.
 // Also works without extensions: 'foo' matches 'foo', 'foo-1', etc.
-fn filename_matches(display_name: &str, expected: &str) -> bool {
+pub fn filename_matches(display_name: &str, expected: &str) -> bool {
   let display = display_name.to_lowercase();
   let exp = expected.to_lowercase();
 

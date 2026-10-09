@@ -68,14 +68,29 @@ fn main() {
       assignment.download_submissions(args.dry_run);
     }
     Cmd::Compile { files } => {
-      let files: Vec<_> = if files.is_empty() {
+      let inputs: Vec<PathBuf> = if files.is_empty() {
         assignment.path.read_dir().unwrap().map(|e| e.unwrap().path()).collect()
       } else {
         files
           .into_iter()
-          .map(|f| if f.is_relative() { assignment.path.join(f) } else { f })
+          .map(|f| if f.is_relative() && !f.exists() { assignment.path.join(f) } else { f })
           .collect()
       };
+
+      // A directory (a student's directory) expands to the one file we care
+      // about in it.
+      let mut files = vec![];
+      for path in inputs {
+        if path.is_dir() {
+          match assignment.find_submission_file(&path) {
+            Ok(file) => files.push(file),
+            Err(e) => eprintln!("error: {}: {e}", path.display()),
+          }
+        } else {
+          files.push(path);
+        }
+      }
+      files.sort();
 
       compile::compile_files(&assignment, &files)
     }

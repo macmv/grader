@@ -30,10 +30,16 @@ enum Status {
 }
 struct StatusPretty(Status);
 
+/// The file's path relative to the assignment directory, so students can be
+/// told apart.
+fn label(assignment: &Assignment, file: &Path) -> String {
+  file.strip_prefix(&assignment.path).unwrap_or(file).display().to_string()
+}
+
 pub fn compile_files(assignment: &Assignment, files: &[PathBuf]) {
   let mut table = Table::new(&["File", "Status"]);
   for f in files {
-    table.add_row(&[f.file_name().unwrap().to_str().unwrap(), "..."]);
+    table.add_row(&[&label(assignment, f), "..."]);
   }
   table.display();
 
@@ -64,7 +70,7 @@ pub fn compile_files(assignment: &Assignment, files: &[PathBuf]) {
       Err(e) => {
         eprintln!("{} compiling '{}': {e}", "error".red().bold(), file.display());
       }
-      Ok(r) => print_result(&r),
+      Ok(r) => print_result(&label(assignment, file), &r),
     }
   }
 }
@@ -132,19 +138,42 @@ const GCC_FLAGS: &str = "-Wall -Wextra -pedantic -fdiagnostics-color=always";
 fn shell_escape(s: &str) -> String { format!("'{}'", s.replace('\'', "'\\''")) }
 
 impl Assignment<'_> {
+  /// Picks the file to compile in a student's directory, the same way the
+  /// downloader picks an attachment: the one matching the assignment's
+  /// `filename`, or the only file there.
+  pub fn find_submission_file(&self, dir: &Path) -> Result<PathBuf, String> {
+    let mut files: Vec<(String, PathBuf)> = vec![];
+    for entry in dir.read_dir().map_err(|e| e.to_string())? {
+      let path = entry.map_err(|e| e.to_string())?.path();
+      if path.is_file() {
+        files.push((path.file_name().unwrap().to_string_lossy().into_owned(), path));
+      }
+    }
+    files.sort();
+    let names = || files.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>();
+
+    if let Some(expected) = &self.settings.filename {
+      match files.iter().position(|(n, _)| crate::download::filename_matches(n, expected)) {
+        Some(i) => Ok(files.swap_remove(i).1),
+        None if files.len() == 1 => Ok(files.remove(0).1),
+        None => Err(format!("couldn't find \"{expected}\" in {:?}", names())),
+      }
+    } else if files.len() == 1 {
+      Ok(files.remove(0).1)
+    } else {
+      Err(format!("multiple files: {:?}", names()))
+    }
+  }
+
   fn compile_command(&self, remote_path: &str) -> String {
     let quoted_path = shell_escape(remote_path);
     let mut cmd =
       self.settings.compile.replace("%REMOTE_PATH", &quoted_path).replace("%GCC_FLAGS", GCC_FLAGS);
 
     if cmd.contains("%REMOTE_OUT") {
-      let out_path = remote_path.strip_suffix(".c").unwrap_or(remote_path);
-      let out_path = out_path.strip_suffix(".s").unwrap_or(out_path);
-
-      if out_path == remote_path {
-        cmd = cmd.replace("%REMOTE_OUT", "");
-      } else {
-        cmd = cmd.replace("%REMOTE_OUT", &shell_escape(out_path));
+      match remote_path.strip_suffix(".c") {
+        Some(out_path) => cmd = cmd.replace("%REMOTE_OUT", &shell_escape(out_path)),
+        None => cmd = cmd.replace("%REMOTE_OUT", ""),
       }
     }
 
@@ -191,30 +220,23 @@ impl Assignment<'_> {
       .strip_prefix(&format!("{}/", self.course.workspace.root.to_str().unwrap()))
       .context("file is not in the 'ta' directory")?;
 
-    if path.chars().filter(|c| *c == '/').count() != 2 {
-      bail!("invalid path: '{path}'\nshould have the format ta/<class>/<assignment>/<file>");
+    // The remote layout mirrors the local one: `<assignment>/<student>/<file>`
+    // with `download.separate_directories`, and `<assignment>/<file>`
+    // otherwise.
+    let (depth, format) = if self.settings.download.separate_directories {
+      (3, "ta/<class>/<assignment>/<student>/<file>")
+    } else {
+      (2, "ta/<class>/<assignment>/<file>")
+    };
+    if path.chars().filter(|c| *c == '/').count() != depth {
+      bail!("invalid path: '{path}'\nshould have the format {format}");
     }
 
     let parent = &path[..path.rfind('/').unwrap()];
 
-    let remote_path = if self.settings.separate_directories {
-      let filename = &path[path.rfind('/').unwrap() + 1..];
-      let second_dash = filename
-        .char_indices()
-        .filter(|(_, c)| *c == '-')
-        .nth(1)
-        .map(|(i, _)| i)
-        .context("filename does not contain a second '-'")?;
-      let student = &filename[..second_dash];
-      let original = &filename[second_dash + 1..];
-      ssh(&format!("mkdir -p $HOME/Desktop/ta/{}/{}", shell_escape(parent), shell_escape(student)))
-        .context("failed to create remote directory")?;
-      format!("/home/macnean2/Desktop/ta/{}/{}/{}", parent, student, original)
-    } else {
-      ssh(&format!("mkdir -p $HOME/Desktop/ta/{}", shell_escape(parent)))
-        .context("failed to create remote directory")?;
-      format!("/home/macnean2/Desktop/ta/{}", path)
-    };
+    ssh(&format!("mkdir -p $HOME/Desktop/ta/{}", shell_escape(parent)))
+      .context("failed to create remote directory")?;
+    let remote_path = format!("/home/macnean2/Desktop/ta/{}", path);
 
     let out = Command::new("scp")
       .arg(file_str)
@@ -228,6 +250,10 @@ impl Assignment<'_> {
     }
 
     let cmd = self.compile_command(&remote_path);
+    // Always run from the directory containing the file.
+    let remote_dir = &remote_path[..remote_path.rfind('/').unwrap()];
+    let cmd =
+      if cmd.is_empty() { cmd } else { format!("cd {} && {cmd}", shell_escape(remote_dir)) };
     if cmd.is_empty() {
       Ok(CompileResult {
         file:      file.to_path_buf(),
@@ -248,8 +274,7 @@ impl Assignment<'_> {
   }
 }
 
-fn print_result(result: &CompileResult) {
-  let name = result.file.file_name().unwrap().to_string_lossy();
+fn print_result(name: &str, result: &CompileResult) {
   println!("{}", format_args!("== {name} ==").cyan().bold());
 
   if !result.stdout.trim().is_empty() {
