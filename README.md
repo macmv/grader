@@ -12,6 +12,9 @@ Courses live as subdirectories of the workspace root, named like `CSCI-101`. Eac
 course  = 12345   # Canvas course ID
 section = 67890   # Canvas section ID
 
+# run `compile` on this machine instead of over ssh (default: false)
+local-compile = true
+
 [assignment.hw1]
 id      = 11111   # Canvas assignment ID
 compile = "gcc %GCC_FLAGS %REMOTE_PATH -o %REMOTE_BUILD"
@@ -36,7 +39,9 @@ Compile string placeholders:
 - `%REMOTE_BUILD` -- same as `%REMOTE_PATH` with `.c` stripped (output binary path)
 - `%GCC_FLAGS` -- expands to `-Wall -Wextra -pedantic -fdiagnostics-color=always`
 
-The `compile` command runs over SSH to a host named `wwu` and copies files with `scp`, so `~/.ssh/config` must have a `wwu` entry pointing at the school server.
+If `local-compile = true`, the command instead runs locally (in the file's directory), `%REMOTE_PATH`/`%REMOTE_BUILD` expand to local paths, and no ssh/scp is needed.
+
+Otherwise, the `compile` command runs over SSH to a host named `wwu` and copies files with `scp`, so `~/.ssh/config` must have a `wwu` entry pointing at the school server.
 
 ## Commands
 

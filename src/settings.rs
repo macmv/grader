@@ -1,10 +1,15 @@
 use std::collections::HashMap;
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 #[allow(dead_code)]
 pub struct Settings {
   pub course:  u32,
   pub section: u32,
+
+  /// Run the compile command on this machine instead of over ssh.
+  #[serde(default)]
+  pub local_compile: bool,
 
   pub assignment: HashMap<String, Assignment>,
 }

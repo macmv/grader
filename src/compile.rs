@@ -151,7 +151,39 @@ impl Assignment<'_> {
     cmd
   }
 
+  fn compile_local(&self, file: &Path) -> anyhow::Result<CompileResult> {
+    let file = file.canonicalize()?;
+    let file_str = file.to_str().context("file path is not valid utf-8")?;
+
+    let cmd = self.compile_command(file_str);
+    if cmd.is_empty() {
+      return Ok(CompileResult {
+        file,
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+      });
+    }
+
+    let output = Command::new("sh")
+      .args(["-c", &format!("{cmd} 2>&1")])
+      .current_dir(file.parent().context("file has no parent directory")?)
+      .output()
+      .context("failed to run compile command")?;
+
+    Ok(CompileResult {
+      file,
+      stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+      stderr: String::new(),
+      exit_code: output.status.code().unwrap_or(-1),
+    })
+  }
+
   fn compile(&self, file: &Path) -> anyhow::Result<CompileResult> {
+    if self.course.settings.local_compile {
+      return self.compile_local(file);
+    }
+
     let file = file.canonicalize()?;
 
     let file_str = file.to_str().context("file path is not valid utf-8")?;
